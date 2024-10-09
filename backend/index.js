@@ -1,6 +1,5 @@
-require('dotenv').config();
-const { google } = require('googleapis');
 const express = require('express');
+const { google } = require('googleapis');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
@@ -8,7 +7,6 @@ require('dotenv').config();
 
 const app = express();
 
-// Middleware for sessions
 app.use(cookieParser());
 app.use(session({
   secret: process.env.SESSION_SECRET || 'fallback-secret',
@@ -27,28 +25,32 @@ const oauth2Client = new google.auth.OAuth2(
   'http://localhost:3000/oauth2callback'
 );
 
-const authUrl = oauth2Client.generateAuthUrl({
-  access_type: 'offline',
-  scope: ['https://www.googleapis.com/auth/gmail.modify']
-});
-
 app.get('/auth', (req, res) => {
+  const authUrl = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: ['https://www.googleapis.com/auth/gmail.modify']
+  });
   res.redirect(authUrl);
 });
 
 app.get('/oauth2callback', async (req, res) => {
-  const code = req.query.code;
-  const { tokens } = await oauth2Client.getToken(code);
+  const { tokens } = await oauth2Client.getToken(req.query.code);
   oauth2Client.setCredentials(tokens);
   req.session.tokens = tokens;
   res.redirect('http://localhost:5173/dashboard');
 });
 
-async function fetchEmailBatch(gmail, pageToken, maxResults) {
+async function fetchEmailBatch(gmail, pageToken, maxResults, searchQuery) {
+  let query = 'in:inbox';
+  if (searchQuery) {
+    const terms = searchQuery.split(' ').map(term => term.includes(':') ? term : `"${term}"`);
+    query += ` (${terms.join(' OR ')})`;
+  }
+
   const response = await gmail.users.messages.list({
     userId: 'me',
     maxResults: maxResults,
-    q: 'in:inbox',
+    q: query,
     pageToken: pageToken,
   });
 
@@ -82,8 +84,9 @@ app.get('/emails', async (req, res) => {
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const pageToken = req.query.pageToken || null;
     const maxResults = req.query.maxResults ? parseInt(req.query.maxResults) : 50;
+    const searchQuery = req.query.q || '';
 
-    const { emails, nextPageToken } = await fetchEmailBatch(gmail, pageToken, maxResults);
+    const { emails, nextPageToken } = await fetchEmailBatch(gmail, pageToken, maxResults, searchQuery);
 
     res.json({
       emails: emails,
@@ -96,5 +99,5 @@ app.get('/emails', async (req, res) => {
 });
 
 app.listen(3000, () => {
-  console.log('App listening on port 3000 and have fun');
+  console.log('App listening on port 3000');
 });

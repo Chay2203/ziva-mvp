@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Inbox, Box, Settings, Brackets, BookDashed, ChevronDown, SquarePen, Link, Trash, MousePointer2 } from 'lucide-react';
+import { Inbox, Box, Settings, Brackets, BookDashed, ChevronDown, SquarePen, Link, Trash, MousePointer2, Search } from 'lucide-react';
+import { debounce } from 'lodash';
 
 export const DashBoard = () => {
   const [emails, setEmails] = useState([]);
@@ -9,6 +10,7 @@ export const DashBoard = () => {
   const [isAccountsOpen, setIsAccountsOpen] = useState(false);
   const [pageToken, setPageToken] = useState(null);
   const [hasMore, setHasMore] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const observer = useRef();
   const lastEmailElementRef = useCallback(node => {
@@ -16,25 +18,25 @@ export const DashBoard = () => {
     if (observer.current) observer.current.disconnect();
     observer.current = new IntersectionObserver(entries => {
       if (entries[0].isIntersecting && hasMore) {
-        fetchEmails(pageToken);
+        fetchEmails(pageToken, searchQuery);
       }
     });
     if (node) observer.current.observe(node);
-  }, [loading, hasMore, pageToken]);
+  }, [loading, hasMore, pageToken, searchQuery]);
 
   useEffect(() => {
-    fetchEmails();
-  }, []);
+    fetchEmails(null, searchQuery);
+  }, [searchQuery]);
 
-  const fetchEmails = async (token = null) => {
+  const fetchEmails = async (token = null, query = '') => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:3000/emails?pageToken=${token || ''}&maxResults=50`, {
+      const response = await fetch(`http://localhost:3000/emails?pageToken=${token || ''}&maxResults=50&q=${encodeURIComponent(query)}`, {
         credentials: 'include',
       });
       if (response.ok) {
         const data = await response.json();
-        setEmails(prevEmails => [...prevEmails, ...data.emails]);
+        setEmails(prevEmails => token ? [...prevEmails, ...data.emails] : data.emails);
         setPageToken(data.nextPageToken);
         setHasMore(!!data.nextPageToken);
       } else {
@@ -45,6 +47,19 @@ export const DashBoard = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const debouncedSearch = useCallback(
+    debounce((query) => {
+      setSearchQuery(query);
+      setPageToken(null);
+      setEmails([]);
+    }, 300),
+    []
+  );
+
+  const handleSearchChange = (e) => {
+    debouncedSearch(e.target.value);
   };
 
   const getHeaderValue = (headers, name) => {
@@ -214,11 +229,14 @@ export const DashBoard = () => {
               <button className="text-gray-400 tracking-tight hover:text-white transition-colors duration-200">Other</button>
             </div>
             <div className="flex items-center space-x-4">
-              <button className="text-gray-400 hover:text-white transition-colors duration-200">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-                </svg>
-              </button>
+            <div className="relative">
+            <input
+              type="text"
+              className="bg-gray-700 text-white rounded-full pl-10 pr-4 py-1 focus:outline-none focus:ring-1 focus:ring-purple-300"
+              onChange={handleSearchChange}
+            />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+          </div>
             </div>
           </div>
         </header>
